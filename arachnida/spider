@@ -1,0 +1,256 @@
+#! /bin/python3
+import re
+import os
+import sys
+import time
+import requests
+import urllib.request
+from bs4 import BeautifulSoup
+
+RED = "\033[31m"
+GREEN = "\033[32m"
+ORANGE = "\033[38;5;208m"
+WHITE = "\033[37m"
+YELLOW = "\033[33m"
+
+NOTICE = ORANGE + """
+USAGE : ./spider [flags] [http(s)://www.<domain name>/endpoint>] (with http(s)://www.)
+
+FLAGS :
+-r : activate recursion on the scrapping if not precise by -l recursion level = level max (5)
+-l : precise the recursion level wanted
+-p : precise destination directory to store imgs scrapped
+-t : friendly scrapping precise the delay between each request in order to avoir an IP ban default 5 sec
+"""
+
+def clear_str(string):
+    pattern = r'[^a-zA-Z0-9\s]'
+    cleaned_string = re.sub(pattern, '', string)
+
+    return cleaned_string[:20]
+
+def parser(argv):
+    ret = {}
+
+    if "https://www." not in argv[-1] and "http://www." not in argv[-1]:
+        print(NOTICE)
+        exit(1)
+    
+    ret['host'] = argv[-1]
+    argv.pop(-1)
+
+    i = 0
+    while i <  len(argv):
+        arg = argv[i]
+        
+        if '-' in arg:
+            if 'h' in arg or "help" in arg:
+                print(NOTICE)
+                exit(1)
+            
+            if 'r' in arg:
+                ret['r'] = True
+
+            if 'l' in arg:
+                if i + 1 < len(argv):
+                    try:
+                        val = int(argv[i + 1])
+                    except ValueError:
+                        print(RED + 'Please provide an integer value for -l')
+                        exit(1)
+                    if val <= 0:
+                        raise ValueError('Please provide a positive value for -l')
+
+                    if val > 5:
+                        val = 5
+                    ret['l'] = val
+                
+                else:
+                    raise ValueError('Please provide a value for -l')
+
+                i += 1
+            
+            if 'p' in arg:
+                if i + 1 < len(argv):
+                    ret['p'] = argv[i + 1]
+                else:
+                    raise ValueError('Please provide a value for -p')
+            
+            if 't' in arg:
+                if i + 1 < len(argv):
+                    try:
+                        val = int(argv[i + 1])
+                    except ValueError:
+                        print(RED + 'Please provide an integer value for -t')
+                        exit(1)
+                    if val < 0:
+                        raise ValueError('Please provide a positive value for -t')
+                    ret['t'] = val
+                
+                else:
+                    raise ValueError('Please provide a value for -t')
+
+                i += 1
+
+        if 'r' not in arg and 'l' not in arg and 'p' not in arg and 't' not in arg and 'h' not in arg:
+            raise ValueError('Please provide a valid flag: -r -l -p -t')
+
+        i+= 1
+
+    return(ret)
+
+
+
+
+
+class   Spider:
+    extensions = [".jpeg", ".jpg", ".png", ".gif", ".bmp"]
+    
+    def __init__(self, url, recursiv_lvl, destination_dir, sleep_timing):
+        if destination_dir[0] != '/' and destination_dir[0] != '.':
+            destination_dir = "./" + destination_dir
+        self.dest = destination_dir
+        self.timer = sleep_timing
+        self.links = []
+        self.links_holder = []
+        self.done = []
+
+        self.url = url
+        if self.url[-1] != '/':
+            self.url += '/'
+
+        if recursiv_lvl <= 0:
+            raise ValueError(f"Recursive value must be strictly positive: {recursiv_lvl}")
+        self.rec = recursiv_lvl
+
+        try:
+            os.makedirs(self.dest, exist_ok=True)
+        except Exception as e:
+            print(RED + f"ERROR: {e}")
+            exit(1)
+    
+    def __str__(self) -> str:
+        return f"""\
+url = {self.url}
+dir = {self.dest}
+delay = {self.timer}
+recursive level = {self.rec}
+"""
+
+
+    def launch(self):
+        self.__scrap(self.url)
+
+    
+    def recursion(self, iteration):
+        
+        if iteration == self.rec:
+            print(GREEN + "finished")
+            exit(0)
+        else:
+            # swap
+            self.links.clear()
+            self.links = self.links_holder.copy()
+            self.links_holder.clear()
+
+            for link in self.links:
+                self.__scrap(link, iteration)
+
+    
+    def __scrap(self, url, iteration = 0):
+
+        # if url already done return
+        if url in self.done:
+            return
+
+        # else scrap
+        else:
+            try:
+                response = requests.get(url)
+
+                # if page received correctly
+                print(WHITE + f"{url} scrapping")
+                if response.status_code == 200:
+                    print(GREEN + "response status : 200 OK")
+                    self.done.append(url)
+
+                    # friendly scrapping option
+                    if self.timer > 0:
+                        time.sleep(self.timer)
+
+                    # Parse content to get other links of the page
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    for link in soup.find_all('a'):
+                        linkUrl = link.get('href')
+                        if linkUrl:
+                            if self.url not in linkUrl and "www" not in linkUrl and '#' not in linkUrl:
+                                if linkUrl[0] == '/':
+                                    linkUrl = self.url + linkUrl[1:]
+
+                            if '#' not in linkUrl and linkUrl not in self.links and linkUrl not in self.links_holder and linkUrl not in self.done:
+                                self.links_holder.append(linkUrl)
+
+                    print(YELLOW + f"iteration {iteration + 1} -> {len(self.links_holder)} links to follow")
+
+                    imgNbr = 1
+                    for pic in soup.find_all('img'):
+                        sauce = pic.get('src')
+                        
+                        if sauce:
+                            if any(ext in sauce for ext in self.extensions):
+                                filename = sauce.split('/')
+                                print(WHITE + f"pic n°[{imgNbr}] {clear_str(filename[-1])} downloading", end="\r")
+                                urllib.request.urlretrieve(sauce, fr"{self.dest}/{clear_str(filename[-1])}")
+                                imgNbr += 1
+                                
+                                # friendly scrapping option
+                                if self.timer > 0:
+                                    time.sleep(self.timer)
+                    print("\n\n")
+                    
+                #if response.status_code == 200:
+                else:
+                    print(RED + f"could not reach page {url} : {response.status_code}")
+
+            # try except block
+            except Exception as e:
+                print(RED + f"Error : {e}")
+
+
+            if (self.links and self.links[-1] == url)\
+                or (not self.links and self.links_holder):
+                return self.recursion(iteration + 1)
+            else:
+                return
+
+
+def init():
+    parsing = parser(sys.argv[1:])
+    recursion = 0
+    if 'r' in parsing:
+        if 'l' in parsing:
+            recursion = parsing['l']
+        else:
+            recursion = 5
+
+    dest_file = "./data"
+    if 'p' in parsing:
+        dest_file = parsing['p']
+
+    timer = 5
+    if 't' in parsing:
+        timer = parsing['t']
+
+    return Spider(parsing["host"], recursion, dest_file, timer)
+
+
+if __name__ == "__main__":
+
+    if len(sys.argv) < 2:
+        print(NOTICE)
+        exit(1)
+
+    spider = init()
+    print(spider)
+    spider.launch()
+

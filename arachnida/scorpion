@@ -1,0 +1,6 @@
+#! /bin/bash
+
+for arg in "$@"; do
+	exiftool $arg
+	echo
+done
